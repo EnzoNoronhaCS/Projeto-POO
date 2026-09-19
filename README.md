@@ -35,7 +35,7 @@ data/
 ## Como executar
 
 python3 src/main.py
-
+python src/main.py
 
 ## Autor
 
