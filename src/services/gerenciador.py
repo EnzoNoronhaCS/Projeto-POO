@@ -38,13 +38,17 @@ class GerenciadorContratos:
         return None
 
     def buscar_por_cliente(self, termo):
-        termo = str(termo).strip().lower()
+        termo = str(termo).strip()
         if termo == "":
             return []
+        termo_nome = termo.lower()
+        termo_documento = "".join(c for c in termo if c.isdigit())
         encontrados = []
         for contrato in self.__contratos:
             cliente = contrato.get_cliente()
-            if termo in cliente.get_nome().lower() or termo in cliente.get_documento():
+            if termo_nome in cliente.get_nome().lower():
+                encontrados.append(contrato)
+            elif termo_documento != "" and termo_documento == cliente.get_documento():
                 encontrados.append(contrato)
         return encontrados
 

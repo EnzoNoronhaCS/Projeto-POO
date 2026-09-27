@@ -13,18 +13,52 @@ class Contrato:
         self.set_periodo(data_inicio, data_fim)
         self.set_indice_reajuste(indice_reajuste)
 
-    def _converter_data(self, valor):
+    @staticmethod
+    def validar_numero(numero):
+        numero = str(numero).strip()
+        if numero == "":
+            raise ValueError("Número do contrato não pode ser vazio")
+        return numero
+
+    @staticmethod
+    def validar_valor(valor):
+        try:
+            convertido = float(str(valor).strip().replace(",", "."))
+        except ValueError:
+            raise ValueError("Valor do contrato deve ser numérico")
+        if convertido <= 0:
+            raise ValueError("Valor do contrato deve ser maior que zero")
+        return convertido
+
+    @staticmethod
+    def validar_data(valor):
         if isinstance(valor, date):
             return valor
         try:
-            return datetime.strptime(str(valor), "%d/%m/%Y").date()
+            return datetime.strptime(str(valor).strip(), "%d/%m/%Y").date()
         except ValueError:
             raise ValueError(f"Data inválida: '{valor}'. Use o formato dd/mm/aaaa")
 
+    @staticmethod
+    def validar_periodo(data_inicio, data_fim):
+        inicio = Contrato.validar_data(data_inicio)
+        fim = Contrato.validar_data(data_fim)
+        if fim <= inicio:
+            raise ValueError("Data de fim deve ser posterior à data de início")
+        return inicio, fim
+
+    @staticmethod
+    def validar_indice(indice):
+        try:
+            convertido = float(str(indice).strip().replace(",", "."))
+        except ValueError:
+            raise ValueError("Índice de reajuste deve ser numérico")
+        if convertido < 0 or convertido > 1:
+            raise ValueError("Índice de reajuste deve estar entre 0 e 1")
+        return convertido
+
     def set_numero(self, numero):
-        if str(numero).strip() == "":
-            raise ValueError("Número do contrato não pode ser vazio")
-        self.__numero = str(numero).strip()
+        self.__numero = Contrato.validar_numero(numero)
 
     def get_numero(self):
         return self.__numero
@@ -38,41 +72,21 @@ class Contrato:
         return self.__cliente
 
     def set_valor_base(self, valor_base):
-        try:
-            valor = float(valor_base)
-        except (TypeError, ValueError):
-            raise ValueError("Valor do contrato deve ser numérico")
-        if valor <= 0:
-            raise ValueError("Valor do contrato deve ser maior que zero")
-        self.__valor_base = valor
-
-    def set_indice_reajuste(self, indice):
-        if indice is None:
-            indice = self.INDICE_PADRAO
-        try:
-            valor = float(indice)
-        except (TypeError, ValueError):
-            raise ValueError("Índice de reajuste deve ser numérico")
-        if valor < 0 or valor > 1:
-            raise ValueError("Índice de reajuste deve estar entre 0 e 1")
-        self.__indice_reajuste = valor
-
-    def get_indice_reajuste(self):
-        return self.__indice_reajuste
-
-    def ciclos_de_reajuste(self, referencia=None):
-        return self.meses_decorridos(referencia) // 12        
+        self.__valor_base = Contrato.validar_valor(valor_base)
 
     def get_valor_base(self):
         return self.__valor_base
 
+    def set_indice_reajuste(self, indice):
+        if indice is None:
+            indice = self.INDICE_PADRAO
+        self.__indice_reajuste = Contrato.validar_indice(indice)
+
+    def get_indice_reajuste(self):
+        return self.__indice_reajuste
+
     def set_periodo(self, data_inicio, data_fim):
-        inicio = self._converter_data(data_inicio)
-        fim = self._converter_data(data_fim)
-        if fim <= inicio:
-            raise ValueError("Data de fim deve ser posterior à data de início")
-        self.__data_inicio = inicio
-        self.__data_fim = fim
+        self.__data_inicio, self.__data_fim = Contrato.validar_periodo(data_inicio, data_fim)
 
     def get_data_inicio(self):
         return self.__data_inicio
@@ -122,10 +136,13 @@ class Contrato:
         total = anos * 12 + meses
         if referencia.day < self.__data_inicio.day:
             total -= 1
-        return max(total, 0)    
+        return max(total, 0)
+
+    def ciclos_de_reajuste(self, referencia=None):
+        return self.meses_decorridos(referencia) // 12
 
     def renovar(self, nova_data_fim):
-        nova = self._converter_data(nova_data_fim)
+        nova = Contrato.validar_data(nova_data_fim)
         if nova <= self.__data_fim:
             raise ValueError("A renovação deve estender o contrato")
         self.__data_fim = nova
@@ -133,14 +150,14 @@ class Contrato:
     def tipo(self):
         return "Contrato"
 
-    def calcular_reajuste(self):
+    def calcular_reajuste(self, referencia=None):
         raise NotImplementedError("Use ContratoMensal ou ContratoAnual")
 
-    def valor_atual(self):
+    def valor_atual(self, referencia=None):
         raise NotImplementedError("Use ContratoMensal ou ContratoAnual")
 
     def valor_mensal_equivalente(self, referencia=None):
-        raise NotImplementedError("Use ContratoMensal ou ContratoAnual")    
+        raise NotImplementedError("Use ContratoMensal ou ContratoAnual")
 
     def __eq__(self, outro):
         if not isinstance(outro, Contrato):
@@ -156,4 +173,4 @@ class Contrato:
         return f"[{self.__numero}] {self.tipo()} | {self.__cliente.get_nome()} | {inicio} a {fim} | R$ {self.__valor_base:.2f}"
 
     def __repr__(self):
-        return self.__str__()    
+        return self.__str__()

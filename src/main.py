@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from models.cliente import Cliente
+from models.contrato import Contrato
 from models.contrato_mensal import ContratoMensal
 from models.contrato_anual import ContratoAnual
 from services.gerenciador import GerenciadorContratos
@@ -17,52 +18,97 @@ exemplos_carregados = False
 LARGURA = 52
 
 
+class OperacaoCancelada(Exception):
+    pass
+
+
 def titulo(texto):
     print()
     print(f"  {texto}")
     print(f"  {'─' * (LARGURA - 4)}")
 
 
+def perguntar(texto, validar):
+    while True:
+        entrada = input(texto)
+        if entrada.strip().lower() == "cancelar":
+            raise OperacaoCancelada()
+        try:
+            return validar(entrada)
+        except ValueError as erro:
+            print(f"    {erro}")
+
+
+def validar_numero_novo(entrada):
+    numero = Contrato.validar_numero(entrada)
+    if gerenciador.buscar_por_numero(numero) is not None:
+        raise ValueError(f"O contrato {numero} já existe")
+    return numero
+
+
+def validar_tipo(entrada):
+    escolha = entrada.strip()
+    if escolha not in ("1", "2"):
+        raise ValueError("Escolha 1 ou 2")
+    return escolha
+
+
+def validar_indice_opcional(entrada):
+    if entrada.strip() == "":
+        return None
+    return Contrato.validar_indice(entrada)
+
+
+def validar_sim_nao(entrada):
+    resposta = entrada.strip().lower()
+    if resposta not in ("s", "n"):
+        raise ValueError("Responda s ou n")
+    return resposta == "s"
+
+
+def validar_dias(entrada):
+    texto = entrada.strip()
+    if texto == "":
+        return 45
+    if not texto.isdigit():
+        raise ValueError("Digite um número inteiro de dias")
+    return int(texto)
+
+
 def buscar_cliente(documento):
-    apenas_numeros = "".join(c for c in str(documento) if c.isdigit())
     for cliente in clientes:
-        if cliente.get_documento() == apenas_numeros:
+        if cliente.get_documento() == documento:
             return cliente
     return None
 
 
 def cadastrar_contrato():
     titulo("Novo contrato")
+    print("  Digite 'cancelar' a qualquer momento para voltar ao menu.")
+    print()
 
-    numero = input("  Número do contrato: ")
-    if gerenciador.buscar_por_numero(numero) is not None:
-        print(f"  O contrato {numero.strip()} já existe.")
-        return
+    numero = perguntar("  Número do contrato: ", validar_numero_novo)
+    documento = perguntar("  CPF ou CNPJ do cliente: ", Cliente.validar_documento)
 
-    documento = input("  CPF ou CNPJ do cliente: ")
     cliente = buscar_cliente(documento)
     cliente_novo = cliente is None
 
     if cliente_novo:
-        nome = input("  Nome: ")
-        email = input("  E-mail (Enter para pular): ")
-        telefone = input("  Telefone (Enter para pular): ")
+        nome = perguntar("  Nome: ", Cliente.validar_nome)
+        email = perguntar("  E-mail (opcional): ", Cliente.validar_email)
+        telefone = perguntar("  Telefone (opcional): ", Cliente.validar_telefone)
         cliente = Cliente(nome, documento, email, telefone)
     else:
         print(f"  Cliente encontrado: {cliente.get_nome()}")
 
-    print("  Tipo: [1] mensal  [2] anual")
-    tipo = input("  Escolha: ").strip()
-
-    valor = input("  Valor base: ").replace(",", ".")
-    data_inicio = input("  Início (dd/mm/aaaa): ")
-    data_fim = input("  Fim (dd/mm/aaaa): ")
-
-    indice = input("  Índice de reajuste (Enter para o padrão): ").replace(",", ".")
-    indice = float(indice) if indice.strip() != "" else None
+    tipo = perguntar("  Tipo [1] mensal  [2] anual: ", validar_tipo)
+    valor = perguntar("  Valor base: ", Contrato.validar_valor)
+    data_inicio = perguntar("  Início (dd/mm/aaaa): ", Contrato.validar_data)
+    data_fim = perguntar("  Fim (dd/mm/aaaa): ", lambda e: Contrato.validar_periodo(data_inicio, e)[1])
+    indice = perguntar("  Índice de reajuste (opcional): ", validar_indice_opcional)
 
     if tipo == "2":
-        antecipado = input("  Pagamento antecipado? (s/n): ").strip().lower() == "s"
+        antecipado = perguntar("  Pagamento antecipado? (s/n): ", validar_sim_nao)
         contrato = ContratoAnual(numero, cliente, valor, data_inicio, data_fim, indice, antecipado)
     else:
         contrato = ContratoMensal(numero, cliente, valor, data_inicio, data_fim, indice)
@@ -113,7 +159,7 @@ def detalhar_contrato():
 
 
 def buscar_por_cliente():
-    termo = input("  Nome ou documento: ")
+    termo = input("  Nome ou CPF/CNPJ completo: ")
     encontrados = gerenciador.buscar_por_cliente(termo)
     if not encontrados:
         print("  Nenhum contrato encontrado.")
@@ -125,8 +171,7 @@ def buscar_por_cliente():
 
 
 def listar_vencendo():
-    entrada = input("  Vencendo em quantos dias? (Enter para 45): ").strip()
-    dias = int(entrada) if entrada != "" else 45
+    dias = perguntar("  Vencendo em quantos dias? (opcional, padrão 45): ", validar_dias)
 
     encontrados = gerenciador.listar_vencendo(dias)
     if not encontrados:
@@ -156,8 +201,14 @@ def renovar_contrato():
         print("  Contrato não encontrado.")
         return
 
+    def validar_nova_data(entrada):
+        nova = Contrato.validar_data(entrada)
+        if nova <= contrato.get_data_fim():
+            raise ValueError("A nova data deve ser posterior ao vencimento atual")
+        return nova
+
     print(f"  Vencimento atual: {contrato.get_data_fim().strftime('%d/%m/%Y')}")
-    nova_data = input("  Nova data de fim (dd/mm/aaaa): ")
+    nova_data = perguntar("  Nova data de fim (dd/mm/aaaa): ", validar_nova_data)
     contrato.renovar(nova_data)
     print(f"\n  Renovado: {contrato}")
 
@@ -177,20 +228,20 @@ def carregar_exemplos():
 
     hoje = date.today()
 
-    escola = Cliente("Castelinho da Crianca LTDA", "12345678000190", "contato@castelinho.com", "6133334444")
+    grafica = Cliente("Grafica Ponto Certo LTDA", "12345678000190", "contato@pontocerto.com", "6133334444")
     joao = Cliente("Joao da Silva", "12345678901", "joao@email.com", "61999998888")
     mercado = Cliente("Mercado Central ME", "98765432000110", "financeiro@central.com", "61988887777")
     ana = Cliente("Ana Beatriz Moreira", "32165498702", "ana.moreira@email.com", "61977776666")
     aurora = Cliente("Transportes Aurora LTDA", "45678912000133", "contratos@aurora.com", "6132225555")
     clinica = Cliente("Clinica Vida Plena ME", "78945612000144", "adm@vidaplena.com", "61966665555")
 
-    clientes.extend([escola, joao, mercado, ana, aurora, clinica])
+    clientes.extend([grafica, joao, mercado, ana, aurora, clinica])
 
     novos = [
-        ContratoMensal("001", escola, 3500.00, hoje - timedelta(days=400), hoje + timedelta(days=10)),
+        ContratoMensal("001", grafica, 3500.00, hoje - timedelta(days=400), hoje + timedelta(days=10)),
         ContratoMensal("002", joao, 890.50, hoje - timedelta(days=60), hoje + timedelta(days=300)),
         ContratoAnual("003", mercado, 24000.00, hoje - timedelta(days=800), hoje + timedelta(days=30), None, True),
-        ContratoAnual("004", escola, 15000.00, hoje - timedelta(days=500), hoje - timedelta(days=20)),
+        ContratoAnual("004", grafica, 15000.00, hoje - timedelta(days=500), hoje - timedelta(days=20)),
         ContratoMensal("005", ana, 1200.00, hoje - timedelta(days=200), hoje + timedelta(days=5)),
         ContratoAnual("006", aurora, 48000.00, hoje - timedelta(days=1100), hoje + timedelta(days=40)),
         ContratoMensal("007", clinica, 2750.00, hoje + timedelta(days=15), hoje + timedelta(days=560)),
@@ -210,8 +261,8 @@ def menu():
     print(f"  {'─' * (LARGURA - 4)}")
     print("   1   Cadastrar contrato")
     print("   2   Listar contratos")
-    print("   3   Detalhar contrato")
-    print("   4   Buscar por cliente")
+    print("   3   Buscar contrato pelo número")
+    print("   4   Buscar contratos de um cliente")
     print("   5   Contratos vencendo")
     print("   6   Ver alertas")
     print("   7   Relatório")
@@ -251,6 +302,8 @@ def main():
 
         try:
             acao()
+        except OperacaoCancelada:
+            print("\n  Operação cancelada.")
         except ValueError as erro:
             print(f"  Erro: {erro}")
         except Exception as erro:
